@@ -1,0 +1,232 @@
+---
+title: "Problem set 3"
+author: "Yanping Zhu"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+Github: https://github.com/Yanping-Zhu/BUSI-525-Problem-Set-3 
+
+```{r setup, include=FALSE}
+library(MatchIt)
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(lubridate)
+library(zoo)
+library(broom)
+library(timereg)
+library(plm)
+library(lfe)
+library(aTSA)
+library(MASS)
+library(reshape)
+
+setwd('/Users/yanpingzhu/Desktop/Courses/BUSI 525 Topics in Financial Markets Research/Assignments/Problem set 3')
+```
+
+# Part 1 - Finite Sample Bias
+
+```{r}
+set.seed(27)
+
+#set parameter values
+rho_uv = -0.8
+mu_u   = 0
+mu_v   = 0
+s_u    = 0.053
+s_v    = 0.044
+rho    = 0.98
+beta   = 0.015
+alpha  = 0
+Ts = seq(120,1200,by=120)
+
+#function to generate data and run regression for different values of T
+reg <- function(T){
+  
+  #generate bivariate normal u and v 
+
+  mu    <- c(mu_u, mu_v)
+  sigma <- matrix(c(s_u^2, s_u*s_v*rho_uv, s_u*s_v*rho_uv, s_v^2),2)
+
+  bvn_uv <- data.frame(mvrnorm(T, mu = mu, Sigma = sigma))
+  colnames(bvn_uv) <- c("u","v")
+  
+  v = as.vector(bvn_uv$v)
+  
+
+
+  #generate xt
+  xt <- matrix(0, T+1,1)
+  #xt = filter::filter(noise,filter=(0.98),method="recursive",init=0)
+  #xt <- arima.sim(T,model=list(ar=rho),innov=bvn_uv$v)
+  
+  for (i in 2:T+1)
+   xt[i] <- rho * xt[i-1] + v[i-1]
+
+  lxt <- xt[1:T]
+  
+  #generate rt
+
+  data <- data.frame(u = bvn_uv$u, lxt = lxt, alp = rep(alpha, times=T), beta =rep(beta, times=T) ) %>% 
+    mutate(rt  = alp + beta * lxt + u) 
+
+  fit <- lm(rt ~ lxt, data = data)
+  beta_hat <- coef(fit)[2]
+}
+
+
+
+#simulate B = 250 times for each value of T
+sim <- function(T){
+  sim_out <- replicate(n=250, reg(T), simplify = FALSE)  
+  sim_res <- data.frame(beta_hat = matrix(unlist(sim_out)))
+}
+vals <- sapply(Ts, sim)
+
+#collect the output 
+df <- as.data.frame(do.call(cbind, vals))
+df_1 <- data.frame(beta_hat = unlist(df,use.names = FALSE))
+
+#generate variables for the plot 
+df_1 <- df_1 %>% 
+  mutate(ts = rep(Ts, each = 250),
+         beta = rep(0.015, times = 2500))
+df_plot <- df_1 %>% 
+  group_by(ts) %>% 
+  summarise(ave   = mean(beta_hat),
+            pct5  = quantile(beta_hat, 0.05),
+            pct95 = quantile(beta_hat, 0.95),
+            beta  = mean(beta)) %>% 
+  ungroup() %>% 
+  as.data.frame()
+
+#plot
+molten <- melt(df_plot,id.vars = "ts")
+p1 <- ggplot(molten, aes(x = ts, y = value, colour = variable)) + geom_line()+
+  xlab("Sample size") +
+  ylab("Value") +
+  scale_colour_discrete(labels = c("Average", "5th percentile", "95th percentile","True beta"))
+p1
+
+
+
+```
+
+
+# Part 2 - Effect of residual correlation
+
+
+For this part, I repeat part of the code in part 1 for different values of $\rho_{uv}$. 
+
+
+
+## $\rho_{uv} = -0.2$ 
+
+```{r}
+rho_uv = -0.2
+
+sim <- function(T){
+  sim_out <- replicate(n=250, reg(T), simplify = FALSE)  
+  sim_res <- data.frame(beta_hat = matrix(unlist(sim_out)))
+}
+vals <- sapply(Ts, sim)
+
+df <- as.data.frame(do.call(cbind, vals))
+
+df_1 <- data.frame(beta_hat = unlist(df,use.names = FALSE))
+df_1 <- df_1 %>% 
+  mutate(ts = rep(Ts, each = 250),
+         beta = rep(0.015, times = 2500))
+df_plot <- df_1 %>% 
+  group_by(ts) %>% 
+  summarise(ave   = mean(beta_hat),
+            pct5  = quantile(beta_hat, 0.05),
+            pct95 = quantile(beta_hat, 0.95),
+            beta  = mean(beta)) %>% 
+  ungroup() %>% 
+  as.data.frame()
+molten <- melt(df_plot,id.vars = "ts")
+p1 <- ggplot(molten, aes(x = ts, y = value, colour = variable)) + geom_line()+
+  xlab("Sample size") +
+  ylab("Value") +
+  scale_colour_discrete(labels = c("Average", "5th percentile", "95th percentile","True beta"))
+p1
+
+
+```
+## $\rho_{uv} = -0.5$ 
+
+```{r}
+rho_uv = -0.5
+sim <- function(T){
+  sim_out <- replicate(n=250, reg(T), simplify = FALSE)  
+  sim_res <- data.frame(beta_hat = matrix(unlist(sim_out)))
+}
+
+
+vals <- sapply(Ts, sim)
+
+df <- as.data.frame(do.call(cbind, vals))
+
+df_1 <- data.frame(beta_hat = unlist(df,use.names = FALSE))
+df_1 <- df_1 %>% 
+  mutate(ts = rep(Ts, each = 250),
+         beta = rep(0.015, times = 2500))
+df_plot <- df_1 %>% 
+  group_by(ts) %>% 
+  summarise(ave   = mean(beta_hat),
+            pct5  = quantile(beta_hat, 0.05),
+            pct95 = quantile(beta_hat, 0.95),
+            beta  = mean(beta)) %>% 
+  ungroup() %>% 
+  as.data.frame()
+molten <- melt(df_plot,id.vars = "ts")
+p1 <- ggplot(molten, aes(x = ts, y = value, colour = variable)) + geom_line()+
+  xlab("Sample size") +
+  ylab("Value") +
+  scale_colour_discrete(labels = c("Average", "5th percentile", "95th percentile","True beta"))
+p1
+
+```
+
+## $\rho_{uv} = -0.8$ 
+
+```{r}
+rho_uv = -0.8
+
+sim <- function(T){
+  sim_out <- replicate(n=250, reg(T), simplify = FALSE)  
+  sim_res <- data.frame(beta_hat = matrix(unlist(sim_out)))
+}
+
+
+vals <- sapply(Ts, sim)
+
+df <- as.data.frame(do.call(cbind, vals))
+
+df_1 <- data.frame(beta_hat = unlist(df,use.names = FALSE))
+df_1 <- df_1 %>% 
+  mutate(ts = rep(Ts, each = 250),
+         beta = rep(0.015, times = 2500))
+df_plot <- df_1 %>% 
+  group_by(ts) %>% 
+  summarise(ave   = mean(beta_hat),
+            pct5  = quantile(beta_hat, 0.05),
+            pct95 = quantile(beta_hat, 0.95),
+            beta  = mean(beta)) %>% 
+  ungroup() %>% 
+  as.data.frame()
+molten <- melt(df_plot,id.vars = "ts")
+p1 <- ggplot(molten, aes(x = ts, y = value, colour = variable)) + geom_line()+
+  xlab("Sample size") +
+  ylab("Value") +
+  scale_colour_discrete(labels = c("Average", "5th percentile", "95th percentile","True beta"))
+p1
+
+```
+
+
+As we can see form the plots, the bias increases as $\rho_{uv}$ decreases from -0.2 to -0.8. 
